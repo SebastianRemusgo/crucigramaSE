@@ -38,9 +38,10 @@ class Variable():
 class Crucigrama():
 
     def __init__(self, archivo_estructura, archivo_palabras):
+
         # Determina la estructura del crucigrama
         with open(archivo_estructura) as f:
-            contenidos = f.read().splitlineas()
+            contenidos = f.read().splitlines()
             self.alto = len(contenidos)
             self.ancho = max(len(linea) for linea in contenidos)
 
@@ -58,7 +59,7 @@ class Crucigrama():
 
         # Guardar la lista vocabulario
         with open(archivo_palabras) as f:
-            self.words = set(f.read().upper().splitlineas())
+            self.words = set(f.read().upper().splitlines())
 
         # Determinar el conjunto de variables
         self.variables = set()
@@ -114,7 +115,7 @@ class Crucigrama():
                     continue
                 celdas1 = v1.celdas
                 celdas2 = v2.celdas
-                interseccion = set(celdas1).interseccion(celdas2)
+                interseccion = set(celdas1).intersection(celdas2)
                 if not interseccion:
                     self.solapamientos[v1, v2] = None
                 else:
