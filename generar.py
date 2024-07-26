@@ -2,7 +2,6 @@ import sys
 
 from crucigrama import *
 
-
 class CreadorCrucigrama():
 
     def __init__(self, crucigrama):
@@ -11,7 +10,7 @@ class CreadorCrucigrama():
         """
         self.crucigrama = crucigrama
         self.dominios = {
-            var: self.crucigrama.palabras.copy()
+            var: self.crucigrama.words.copy()
             for var in self.crucigrama.variables
         }
 
@@ -99,7 +98,10 @@ class CreadorCrucigrama():
         (Elimina cualquier valor que sea inconsistente con las restricciones unarias de una variable;
         en este caso, la longitud de la palabra).
         """
-        raise NotImplementedError
+        for var in self.dominios:
+            for palabra in set(self.dominios[var]):
+                if len(palabra) != var.longitud:
+                    self.dominios[var].remove(palabra)
 
     def revisar(self, x, y):
         """
@@ -110,7 +112,18 @@ class CreadorCrucigrama():
         Devuelve True si se ha hecho una revisión al dominio de `x`; devuelve
         False si no se ha hecho ninguna revisión.
         """
-        raise NotImplementedError
+        revisado = False
+        i, j = self.crucigrama.solapamientos[x, y]
+        for palabra_x in set(self.dominios[x]):
+            cumple_restriccion = False
+            for palabra_y in self.dominios[y]:
+                if palabra_x[i] == palabra_y[j]:
+                    cumple_restriccion = True
+                    break
+            if not cumple_restriccion:
+                self.dominios[x].remove(palabra_x)
+                revisado = True
+        return revisado
 
     def ac3(self, arcs=None): #Visite https://en.wikipedia.org/wiki/AC-3_algorithm para conocer la historia
         """
@@ -121,21 +134,40 @@ class CreadorCrucigrama():
         Devuelve True si se cumple la consistencia de arcos y no hay dominios vacíos;
         devuelve False si uno o más dominios terminan vacíos.
         """
-        raise NotImplementedError
+        if arcs is None:
+            arcs = [(x, y) for x in self.dominios for y in self.crucigrama.vecinos(x)]
+
+        while arcs:
+            (x, y) = arcs.pop()
+            if self.revisar(x, y):
+                if not self.dominios[x]:
+                    return False
+                for z in self.crucigrama.vecinos(x) - {y}:
+                    arcs.append((z, x))
+        return True
 
     def asignacion_completa(self, asignacion):
         """
         Devuelve True si `asignacion` está completa (es decir, asigna un valor a cada
         variable crucigrama); devuelve False en caso contrario.
         """
-        raise NotImplementedError
+        return set(asignacion.keys()) == set(self.crucigrama.variables)
 
     def consistencia(self, asignacion):
         """
         Devuelve True si `asignacion` es consistencia (es decir, las palabras encajan en crucigrama
         sin caracteres conflictivos); devuelve False en caso contrario.
         """
-        raise NotImplementedError
+        for (var1, palabra1) in asignacion.items():
+            if var1.longitud != len(palabra1):
+                return False
+            for var2 in self.crucigrama.vecinos(var1):
+                if var2 in asignacion:
+                    palabra2 = asignacion[var2]
+                    i, j = self.crucigrama.solapamientos[var1, var2]
+                    if palabra1[i] != palabra2[j]:
+                        return False
+        return True
 
     def ordenar_valores_dominio(self, var, asignacion):
         """
@@ -143,7 +175,13 @@ class CreadorCrucigrama():
         - Puede NO estar ordenada.
         - Puede estar ordenada por el número de valores que descartan para las variables vecinas (menor a mayor).
         """
-        raise NotImplementedError
+        def conflictos(palabra):
+            return sum(
+                1
+                for vecino in self.crucigrama.vecinos(var)
+                if vecino not in asignacion and palabra in self.dominios[vecino]
+            )
+        return sorted(self.dominios[var], key=conflictos)
 
     def seleccionar_variable_no_asignada(self, asignacion):
         """
@@ -153,7 +191,32 @@ class CreadorCrucigrama():
         - Puede elegir la variable con el minimo número de valores restantes en el dominio; y
           si hay empate, elige la variable con el mayor grado.
         """
-        raise NotImplementedError
+        no_asignadas = [v for v in self.crucigrama.variables if v not in asignacion]
+
+        # Heurística: mínimo número de valores restantes
+        no_asignadas.sort(key=lambda var: len(self.dominios[var]))
+
+        # Heurística: grado
+        no_asignadas.sort(key=lambda var: len(self.crucigrama.vecinos(var)), reverse=True)
+
+        return no_asignadas[0]
+
+    def inferencia(self, asignacion, var):
+        """
+        Realiza la inferencia de AC-3 en los dominios.
+        """
+        inferences = {}
+        queue = [(x, var) for x in self.crucigrama.vecinos(var)]
+
+        while queue:
+            (x, y) = queue.pop()
+            if self.revisar(x, y):
+                if not self.dominios[x]:
+                    return None
+                inferences[x] = self.dominios[x].copy()
+                for z in self.crucigrama.vecinos(x) - {y}:
+                    queue.append((z, x))
+        return inferences
 
     def backtrack(self, asignacion):
         """
@@ -164,7 +227,23 @@ class CreadorCrucigrama():
 
         Si no es posible la asignación, devuelve None.
         """
-        raise NotImplementedError
+        if self.asignacion_completa(asignacion):
+            return asignacion
+
+        var = self.seleccionar_variable_no_asignada(asignacion)
+        for valor in self.ordenar_valores_dominio(var, asignacion):
+            if self.consistencia(asignacion):
+                asignacion[var] = valor
+                inferences = self.inferencia(asignacion, var)
+                if inferences is not None:
+                    self.dominios.update(inferences)
+                    resultado = self.backtrack(asignacion)
+                    if resultado is not None:
+                        return resultado
+                    for infer_var in inferences:
+                        self.dominios[infer_var] = inferences[infer_var]
+                asignacion.pop(var)
+        return None
 
 
 def main():
@@ -185,7 +264,7 @@ def main():
 
     # Print result
     if asignacion is None:
-        print("No solution.")
+        print("No hay solucion PE")
     else:
         creador.print(asignacion)
         if output:
